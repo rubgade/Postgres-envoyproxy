@@ -1,0 +1,108 @@
+static_resources:
+  listeners:
+  - name: listener_0
+    address:
+      socket_address: { address: 0.0.0.0, port_value: 5432 }
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.postgres_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.postgres_proxy.v3alpha.PostgresProxy
+          stat_prefix: postgres
+      - name: envoy.filters.network.rbac
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.rbac.v3.RBAC
+          rules:
+            action: ALLOW
+            policies:
+              "read-policy":
+                permissions:
+                - metadata:
+                    filter: envoy.filters.network.postgres_proxy
+                    path:
+                    - key: query_type
+                      value:
+                        string_match:
+                          exact: SELECT
+                principals:
+                - any: true
+              "write-policy":
+                permissions:
+                - metadata:
+                    filter: envoy.filters.network.postgres_proxy
+                    path:
+                    - key: query_type
+                      value:
+                        string_match:
+                          regex: "^(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE)"
+                principals:
+                - any: true
+      - name: envoy.filters.network.tcp_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+          stat_prefix: tcp
+          cluster: postgres-read-cluster
+          lb_policy: ROUND_ROBIN
+          connect_timeout: 0.25s
+          upstream_connection_options:
+            tcp_keepalive:
+              keepalive_time: 300s
+          metadata_match:
+            filter_metadata:
+              envoy.lb:
+                query_type: SELECT
+      - name: envoy.filters.network.tcp_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+          stat_prefix: tcp
+          cluster: postgres-write-cluster
+          connect_timeout: 0.25s
+          upstream_connection_options:
+            tcp_keepalive:
+              keepalive_time: 300s
+          metadata_match:
+            filter_metadata:
+              envoy.lb:
+                query_type:
+                  regex: "^(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE)"
+
+  clusters:
+  - name: postgres-read-cluster
+    connect_timeout: 0.25s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: postgres-read-cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: reader1.example.com
+                port_value: 5432
+        - endpoint:
+            address:
+              socket_address:
+                address: reader2.example.com
+                port_value: 5432
+
+  - name: postgres-write-cluster
+    connect_timeout: 0.25s
+    type: STRICT_DNS
+    lb_policy: LEAST_REQUEST
+    load_assignment:
+      cluster_name: postgres-write-cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: writer.example.com
+                port_value: 5432
+
+admin:
+  access_log_path: "/dev/null"
+  address:
+    socket_address: 
+      address: 0.0.0.0
+      port_value: 9901
