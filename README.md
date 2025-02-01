@@ -33,8 +33,8 @@ This project sets up an Envoy Proxy to act as a load balancer and read/write que
 1. **Clone the repository**:
 
    ```bash
-   git clone <your-repository-url>
-   cd <repository-directory>
+   git clone (https://github.com/rubgade/Postgres-envoyproxy)
+   cd Postgres-envoyproxy
 
 Build the Docker Image:
 bash
